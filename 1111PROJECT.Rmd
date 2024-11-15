@@ -1,0 +1,488 @@
+---
+title: "Regression Project"
+output: pdf_document
+date: "2023-10-15"
+---
+
+```{r warning=FALSE}
+library(readr)
+library(GWmodel)
+library(nortest)
+library(lmtest)
+library(car)
+```
+
+# kemiskinan2.xlsx
+
+```{r}
+library(readxl)
+data <- read_excel("C:/Users/evopa/Downloads/kemiskinan2.xlsx")
+data
+```
+
+
+
+`
+
+
+```{r}
+par(mfrow = c(4, 2))
+
+boxplot(data$education_completion_rate, main="Education Completion Rate", col="lightblue", border="black")
+boxplot(data$adequate_sanitation, main="Adequate Sanitation", col="lightgreen", border="black")
+boxplot(data$drinking_water, main="Drinking Water", col="lightcoral", border="black")
+boxplot(data$health_facilities, main="Health Facilities", col="lightyellow", border="black")
+boxplot(data$own_house, main="Own House", col="lightsalmon", border="black")
+boxplot(data$electricity_pln, main="Electricity PLN", col="lightcyan", border="black")
+boxplot(data$poverty, main="Poverty", col="lightblue", border="black")
+
+
+```
+par(mfrow = c(2, 4))
+
+boxplot(data$education_completion_rate, main="Education Completion Rate", col="lightblue", border="black")
+boxplot(data$adequate_sanitation, main="Adequate Sanitation", col="lightgreen", border="black")
+boxplot(data$drinking_water, main="Drinking Water", col="lightcoral", border="black")
+boxplot(data$health_facilities, main="Health Facilities", col="lightyellow", border="black")
+boxplot(data$own_house, main="Own House", col="lightsalmon", border="black")
+boxplot(data$electricity_pln, main="Electricity PLN", col="lightcyan", border="black")
+boxplot(data$poverty, main="Poverty", col="lightblue", border="black")
+
+## Linear Regression OLS
+
+```{r}
+modelOLS <- lm(formula = poverty ~ education_completion_rate + adequate_sanitation + drinking_water + health_facilities + own_house + electricity_pln, data = data)
+sum = summary(modelOLS)
+sum
+```
+
+```{r}
+cat("AIC = ",AIC(modelOLS))
+cat("\nR2 = ",sum$r.squared)
+```
+
+### Pearson Correlation Test
+
+```{r}
+cor.test(data$poverty, data$drinking_water)
+```
+
+### Model Adequacy Checking
+
+#### Normality Test
+
+Hypothesis:
+
+$$
+\begin{aligned}
+H_0&: \text{Errors are distributed normally}\\
+H_1&: \text{Errors are not distributed normally}
+\end{aligned}
+$$
+
+Significance Level:
+
+$$
+\alpha = 5\%=0.05
+$$
+
+P-value vs $\alpha$:
+
+```{r}
+error <- resid(modelOLS)
+error
+
+lillie.test(error)
+```
+
+Since the p-value \> 0.05, we fail to reject $H_0$.
+
+Thus, the errors are distributed normally
+
+#### Homoscedasticity Test
+
+Hypothesis:
+
+$$
+\begin{aligned}
+H_0&: \text{The residuals are distributed with equal variance (Homoscedastic)}\\
+H_1&: \text{The residuals are distributed with non equal variance (Heteroscedastic)}
+\end{aligned}
+$$
+
+Significance Level:
+
+$$
+\alpha = 5\%=0.05
+$$
+
+P-value vs $\alpha$:
+
+```{r}
+bptest(modelOLS)
+```
+
+Since the p-value \< 0.05, we reject $H_0$.
+
+Thus, the residuals are distributed with non equal variance. Jadi tidak lolos uji ini.
+
+#### Autocorrelation Test
+
+Hypothesis:
+
+$$
+\begin{aligned}
+H_0&: \text{The residuals are non autocorrelated}\\
+H_1&: \text{The residuals are autocorrelated}
+\end{aligned}
+$$
+
+Significance Level:
+
+$$
+\alpha = 5\%=0.05
+$$
+
+P-value vs $\alpha$:
+
+```{r}
+dwtest(modelOLS)
+```
+
+Since the p-value \> 0.05, we fail to reject $H_0$.
+
+Thus, the errors are non autocorrelated
+
+### Multicollinearity Check
+
+```{r}
+vif(modelOLS)
+```
+
+Since there is no value of VIF that greater than 10, we can conclude that there are no multicollinearity between the variables.
+
+### AIC, BIC, AICc, and SSE
+```{r}
+AIC(modelOLS)
+BIC(modelOLS)
+AICc(modelOLS)
+```
+```{r}
+anova(modelOLS)
+```
+```{r}
+# high leverage => 2(p+1)/n = 2(7)/34 = 0.4118
+hats <- as.data.frame(gwr.fit$lhat)
+hats%>%arrange(desc(hats))
+str(gwr.fit)
+
+#outlier in y
+boxplot(data$Y)
+hist(data$Y)
+
+#influential obs -> ci > 1
+c <- as.data.frame(cooks.distance(model))
+c%>%arrange(desc(c))
+```
+## Variable Selection: Forward
+```{r}
+mfor <- step(lm(poverty~1, data=data), direction="forward", scope=~education_completion_rate + adequate_sanitation + drinking_water + health_facilities + own_house + electricity_pln)
+```
+```{r}
+model2=lm(poverty ~ drinking_water + adequate_sanitation + education_completion_rate, data=data)
+summary(model2)
+```
+```{r}
+AIC(model2)
+BIC(model2)
+AICc(model2)
+```
+```{r}
+anova(model2)
+```
+
+## Variable Selection: Backward
+```{r}
+mback <- step(lm(poverty~education_completion_rate + adequate_sanitation + drinking_water + health_facilities + own_house + electricity_pln, data=data), direction="backward")
+```
+
+## Weighted Least Square Regression
+
+Since the OLS model does not satisfy all of the model adequacy check, we try to use the weighted least square regression to fix the homoscedastic issue.
+
+```{r}
+wt <- 1/lm(abs(modelOLS$residuals) ~ modelOLS$fitted.values)$fitted.values^2
+wls_model <- lm(formula = poverty ~ education_completion_rate + adequate_sanitation + drinking_water + health_facilities + own_house + electricity_pln, data = data, weights=wt)
+summary(wls_model)
+```
+```{r}
+AIC(wls_model)
+BIC(wls_model)
+AICc(wls_model)
+```
+```{r}
+anova(wls_model)
+```
+
+Since the $R^2$ is below the OLS model (as benchmark), we try to use another method
+
+## Geographically Weighted Regression
+
+```{r warning=FALSE}
+library(spgwr)
+library(spdep)
+library(spatialreg)
+library(gwrr)
+library(sf)
+library(mapview)
+library(tibble)
+```
+
+```{r}
+df <- as_tibble(data)
+df_spasial <- st_as_sf(df, coords = c("longitude", "latitude"), crs = 4326)
+df_spasial_sp <- as(df_spasial, "Spatial")
+df_spasial_sp
+```
+
+```{r}
+#coords <- coordinates(df_spasial_sp)
+#bobot <- nb2listw(knn2nb(knearneigh(coords)))
+#moran.test(df_spasial_sp$y, ww, alternative="greater")
+#euclidean <- gw.dist(coords)
+#View(euclidean)
+```
+
+### Finding the Optimal Bandwidth
+
+```{r}
+gwr_bandwidth <- gwr.sel(poverty ~ education_completion_rate + adequate_sanitation + drinking_water + health_facilities + 
+                           own_house + electricity_pln, df_spasial_sp, gweight = gwr.Gauss)
+gwr_bandwidth
+```
+
+### The GWR Model
+
+```{r}
+gwr.fit <- gwr(poverty ~ education_completion_rate + adequate_sanitation + drinking_water + health_facilities + own_house + 
+                 electricity_pln, data = df_spasial_sp, bandwidth = gwr_bandwidth, hatmatrix=TRUE, se.fit=TRUE, gweight = gwr.Gauss)
+gwr.fit
+```
+```{r}
+BIC(gwr.fit)
+```
+```{r}
+gwr_bandwidth2 <- gwr.sel(poverty ~ education_completion_rate + adequate_sanitation + drinking_water, df_spasial_sp, gweight = gwr.Gauss)
+gwr_bandwidth2
+```
+```{r}
+gwrfit_reduced=gwr(poverty ~ education_completion_rate + adequate_sanitation + drinking_water, data = df_spasial_sp, bandwidth = gwr_bandwidth2, hatmatrix=TRUE, se.fit=TRUE, gweight = gwr.Gauss)
+gwrfit_reduced
+```
+
+```{r}
+model = c("OLS","GWR")
+R2 = c(sum$r.squared, 0.8194663)
+R2
+```
+
+```{r}
+AIC = c(AIC(modelOLS),gwr.fit$results$AICh)
+AIC
+```
+
+```{r}
+evaluasi = data.frame(model,R2,AIC)
+evaluasi
+```
+
+# kemiskinan.xlsx
+
+```{r}
+library(readxl)
+data <- read_excel("C:/Users/evopa/Downloads/kemiskinan.xlsx")
+data
+```
+
+## Linear Regression OLS
+
+```{r}
+modelOLS <- lm(formula = miskin ~ tingkat_penyelesaian_pendidikan + sanitasi_layak + luas_lantai + keluhan_kesehatan + air_minum + fasilitas_kesehatan +rumah_sendiri, data = data)
+sum = summary(modelOLS)
+sum
+```
+
+```{r}
+cat("AIC = ",AIC(modelOLS))
+cat("\nR2 = ",sum$r.squared)
+```
+
+### Pearson Correlation Test
+
+```{r}
+cor.test(data$miskin, data$air_minum)
+```
+
+### Model Adequacy Checking
+
+#### Normality Test
+
+Hypothesis:
+
+$$
+\begin{aligned}
+H_0&: \text{Errors are distributed normally}\\
+H_1&: \text{Errors are not distributed normally}
+\end{aligned}
+$$
+
+Significance Level:
+
+$$
+\alpha = 5\%=0.05
+$$
+
+P-value vs $\alpha$:
+
+```{r}
+error <- resid(modelOLS)
+error
+
+lillie.test(error)
+```
+
+Since the p-value \> 0.05, we fail to reject $H_0$.
+
+Thus, the errors are distributed normally
+
+#### Homoscedasticity Test
+
+Hypothesis:
+
+$$
+\begin{aligned}
+H_0&: \text{The residuals are distributed with equal variance (Homoscedastic)}\\
+H_1&: \text{The residuals are distributed with non equal variance (Heteroscedastic)}
+\end{aligned}
+$$
+
+Significance Level:
+
+$$
+\alpha = 5\%=0.05
+$$
+
+P-value vs $\alpha$:
+
+```{r}
+bptest(modelOLS)
+```
+
+Since the p-value \< 0.05, we reject $H_0$.
+
+Thus, the residuals are distributed with non equal variance. Jadi tidak lolos uji ini.
+
+#### Autocorrelation Test
+
+Hypothesis:
+
+$$
+\begin{aligned}
+H_0&: \text{The residuals are non autocorrelated}\\
+H_1&: \text{The residuals are autocorrelated}
+\end{aligned}
+$$
+
+Significance Level:
+
+$$
+\alpha = 5\%=0.05
+$$
+
+P-value vs $\alpha$:
+
+```{r}
+dwtest(modelOLS)
+```
+
+Since the p-value \> 0.05, we fail to reject $H_0$.
+
+Thus, the errors are non autocorrelated
+
+### Multicollinearity Check
+
+```{r}
+vif(modelOLS)
+```
+
+Since there is no value of VIF that greater than 10, we can conclude that there are no multicollinearity between the variables.
+
+## Weighted Least Square Regression
+
+Since the OLS model does not satisfy all of the model adequacy check, we try to use the weighted least square regression to fix the homoscedastic issue.
+
+```{r}
+wt <- 1/lm(abs(modelOLS$residuals) ~ modelOLS$fitted.values)$fitted.values^2
+wls_model <- lm(formula = miskin ~ tingkat_penyelesaian_pendidikan + sanitasi_layak + luas_lantai + keluhan_kesehatan + air_minum + fasilitas_kesehatan +rumah_sendiri, data = data, weights=wt)
+
+summary(wls_model)
+```
+
+Since the $R^2$ is below the OLS model (as benchmark), we try to use another method
+
+## Geographically Weighted Regression
+
+```{r warning=FALSE}
+library(spgwr)
+library(spdep)
+library(spatialreg)
+library(gwrr)
+library(sf)
+library(mapview)
+library(tibble)
+```
+
+```{r}
+df <- as_tibble(data)
+df_spasial <- st_as_sf(df, coords = c("longitude", "latitude"), crs = 4326)
+df_spasial_sp <- as(df_spasial, "Spatial")
+df_spasial_sp
+```
+
+```{r}
+#coords <- coordinates(df_spasial_sp)
+#bobot <- nb2listw(knn2nb(knearneigh(coords)))
+#moran.test(df_spasial_sp$y, ww, alternative="greater")
+#euclidean <- gw.dist(coords)
+#View(euclidean)
+```
+
+### Finding the Optimal Bandwidth
+
+```{r}
+gwr_bandwidth <- gwr.sel(miskin ~ tingkat_penyelesaian_pendidikan + sanitasi_layak + luas_lantai + keluhan_kesehatan + air_minum + fasilitas_kesehatan +rumah_sendiri, df_spasial_sp, gweight = gwr.Gauss)
+gwr_bandwidth
+```
+
+### The GWR Model
+
+```{r}
+gwr.fit <- gwr(miskin ~ tingkat_penyelesaian_pendidikan + sanitasi_layak + luas_lantai + keluhan_kesehatan + air_minum + fasilitas_kesehatan +rumah_sendiri, data = df_spasial_sp, bandwidth = gwr_bandwidth, hatmatrix=TRUE, se.fit=TRUE, gweight = gwr.Gauss)
+gwr.fit
+```
+
+```{r}
+model = c("OLS","GWR")
+R2 = c(sum$r.squared, 0.8330831)
+R2
+```
+
+```{r}
+AIC = c(AIC(modelOLS),gwr.fit$results$AICh)
+AIC
+```
+
+```{r}
+evaluasi = data.frame(model,R2,AIC)
+evaluasi
+```
